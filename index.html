@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Калькулятор просчёта</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--green:#16a34a;--red:#dc2626;--shadow:0 10px 30px rgba(15,23,42,.08)}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#f7f9fc,#eef2f7);font:14px/1.45 Inter,Arial,sans-serif;color:var(--text)}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 18px 50px}
+header{margin-bottom:20px}h1{margin:0;font-size:28px;letter-spacing:-.5px}.sub{color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px;margin-bottom:18px}
+.card h2{font-size:17px;margin:0 0 16px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+label{display:block;font-weight:600;margin-bottom:6px}.input{width:100%;padding:11px 12px;border:1px solid #d5dae1;border-radius:10px;background:#fff;font-size:15px;outline:none}
+.input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #2563eb18}.redlabel{color:#b91c1c}.redlabel:after{content:" •";font-size:18px}
+.results{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.metric{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:14px}
+.metric .k{color:var(--muted);font-size:12px}.metric .v{font-size:22px;font-weight:750;margin-top:4px}
+.payment-badge{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#eef4ff;color:#1d4ed8;font-size:12px;font-weight:700;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right}
+th{background:#f8fafc;color:#4b5563;position:sticky;top:0}th:first-child,td:first-child{text-align:left}
+.scroll{overflow:auto;max-height:430px;border:1px solid var(--line);border-radius:12px}tbody tr:hover{background:#f8fafc}
+.note{color:var(--muted);font-size:12px;margin-top:10px}.positive{color:var(--green);font-weight:700}.negative{color:var(--red);font-weight:700}
+.coef-pill{font-weight:750}
+@media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}.results{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.grid,.results{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+ <div><h1>Калькулятор просчёта</h1><div class="sub">Расчёт цены продажи, суммы заказа и прибыли по формуле из «Козы просчёта»</div></div>
+</header>
+
+<section class="card">
+<h2>Параметры расчёта</h2>
+<div class="grid">
+ <div><label class="redlabel">Цена подрядчика, грн</label><input id="gCost" class="input" type="number" step=".01" value="63.70"></div>
+ <div><label class="redlabel">Тираж, шт</label><input id="gQty" class="input" type="number" min="1" value="100"></div>
+ <div><label class="redlabel">Коэффициент</label><input id="gCoef" class="input" type="number" step=".01" value="1.5"></div>
+ <div><label>Тип оплаты</label><select id="gPay" class="input"><option value="fop" selected>ФОП / карта</option><option value="tov">ТОВ</option></select></div>
+</div>
+</section>
+
+<section class="card">
+<h2>Результат</h2>
+<div id="payBadge" class="payment-badge">ФОП / карта</div>
+<div class="results">
+ <div class="metric"><div class="k">Цена продажи за 1 шт</div><div id="gSell" class="v">—</div></div>
+ <div class="metric"><div class="k">Прибыль на 1 шт</div><div id="gProfitUnit" class="v">—</div></div>
+ <div class="metric"><div class="k">Прибыль на тираж</div><div id="gProfitTotal" class="v">—</div></div>
+ <div class="metric"><div class="k">Сумма заказа</div><div id="gOrder" class="v">—</div></div>
+</div>
+</section>
+
+<section class="card">
+<h2>Градация цены</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Коэффициент</th><th>ФОП / карта</th><th>ТОВ</th><th>Прибыль на тираж</th></tr></thead>
+<tbody id="gTable"></tbody>
+</table>
+</div>
+<div class="note">Показываются текущий коэффициент и значения с шагом 0,05 в меньшую сторону. Прибыль на тираж рассчитывается для выбранного типа оплаты.</div>
+</section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const money=v=>Number(v||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' грн';
+
+function calcRow(cost,qty,coef){
+  const base=cost*coef;
+  const fop=base*1.06;
+  const tov=base*1.20;
+  const fopProfit=((fop/1.06)-cost)*qty;
+  const tovProfit=((tov/1.20)-cost)*qty;
+  return {fop,tov,fopProfit,tovProfit};
+}
+
+function gCalc(){
+  const cost=+$('gCost').value||0;
+  const qty=+$('gQty').value||0;
+  const coef=+$('gCoef').value||0;
+  const pay=$('gPay').value;
+  const row=calcRow(cost,qty,coef);
+  const sell=pay==='fop'?row.fop:row.tov;
+  const profit=pay==='fop'?row.fopProfit:row.tovProfit;
+  const profitUnit=qty ? profit/qty : 0;
+
+  $('gSell').textContent=money(sell);
+  $('gProfitUnit').textContent=money(profitUnit);
+  $('gOrder').textContent=money(sell*qty);
+  $('gProfitTotal').textContent=money(profit);
+  $('payBadge').textContent=pay==='fop'?'ФОП / карта':'ТОВ';
+
+  const rows=[];
+  for(let i=0;i<12;i++){
+    const c=coef-i*0.05;
+    if(c<1.35) break;
+    const r=calcRow(cost,qty,c);
+    const p=pay==='fop'?r.fopProfit:r.tovProfit;
+    rows.push(`<tr>
+      <td><span class="coef-pill">${c.toFixed(2)}</span></td>
+      <td>${money(r.fop)}</td>
+      <td>${money(r.tov)}</td>
+      <td class="${p>=0?'positive':'negative'}">${money(p)}</td>
+    </tr>`);
+  }
+  $('gTable').innerHTML=rows.join('');
+}
+
+document.querySelectorAll('input,select').forEach(x=>x.addEventListener('input',gCalc));
+gCalc();
+</script>
+</body>
+</html>
